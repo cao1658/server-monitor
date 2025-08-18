@@ -24,7 +24,7 @@
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/yourusername/server-monitor.git
+git clone https://github.com/cao1568/server-monitor.git
 cd server-monitor
 ```
 
@@ -49,7 +49,7 @@ http://localhost:5000
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/yourusername/server-monitor.git
+git clone https://github.com/cao1658/server-monitor.git
 cd server-monitor
 ```
 
