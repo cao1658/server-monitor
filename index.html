@@ -1,0 +1,1131 @@
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ServerGuard - 服务器监控与SSH管理平台</title>
+  <!-- 外部资源引入 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  
+  <!-- Tailwind 配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#1E40AF', // 深蓝主色调，传达专业和可靠性
+            secondary: '#3B82F6', // 亮蓝色，用于交互元素
+            success: '#10B981', // 成功状态绿色
+            warning: '#F59E0B', // 警告状态黄色
+            danger: '#EF4444',  // 危险状态红色
+            dark: '#1E293B',    // 深色背景
+            'dark-light': '#334155', // 稍亮的深色
+            'light-gray': '#F1F5F9', // 浅灰色背景
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['Fira Code', 'Consolas', 'monospace'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .scrollbar-thin {
+        scrollbar-width: thin;
+      }
+      .scrollbar-thin::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      .scrollbar-thin::-webkit-scrollbar-thumb {
+        background-color: rgba(156, 163, 175, 0.5);
+        border-radius: 2px;
+      }
+      .animate-pulse-slow {
+        animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      .card-hover {
+        @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+      }
+      .terminal-cursor {
+        animation: blink 1s step-end infinite;
+      }
+      @keyframes blink {
+        from, to { opacity: 1; }
+        50% { opacity: 0; }
+      }
+      .user-menu-enter {
+        animation: fadeIn 0.2s ease-out forwards;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    }
+  </style>
+</head>
+
+<body class="font-sans bg-light-gray text-dark overflow-hidden h-screen flex flex-col">
+  <div class="flex flex-1 overflow-hidden">
+    <!-- 侧边栏 -->
+    <aside id="sidebar" class="w-64 bg-dark text-white flex-shrink-0 hidden md:flex flex-col transition-all duration-300 ease-in-out z-30">
+      <!-- 品牌标识 -->
+      <div class="p-5 border-b border-dark-light flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+            <i class="fa fa-shield text-white text-xl"></i>
+          </div>
+          <h1 class="text-xl font-bold">ServerGuard</h1>
+        </div>
+        <button id="sidebar-close" class="md:hidden text-gray-400 hover:text-white">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+      
+      <!-- 导航菜单 -->
+      <nav class="flex-1 overflow-y-auto scrollbar-thin p-4">
+        <div class="space-y-1 mb-8">
+          <p class="text-xs uppercase text-gray-400 font-semibold px-3 mb-2">主菜单</p>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2.5 rounded-lg bg-primary/20 text-white font-medium">
+            <i class="fa fa-tachometer w-5 text-center"></i>
+            <span>仪表盘</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light transition-colors">
+            <i class="fa fa-terminal w-5 text-center"></i>
+            <span>SSH 终端</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light transition-colors">
+            <i class="fa fa-line-chart w-5 text-center"></i>
+            <span>性能分析</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light transition-colors">
+            <i class="fa fa-bell w-5 text-center"></i>
+            <span>告警中心</span>
+            <span class="ml-auto bg-danger text-white text-xs px-2 py-0.5 rounded-full">5</span>
+          </a>
+          <a href="#" class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light transition-colors">
+            <i class="fa fa-history w-5 text-center"></i>
+            <span>历史记录</span>
+          </a>
+        </div>
+        
+        <!-- 服务器列表 -->
+        <div class="space-y-1">
+          <div class="flex items-center justify-between px-3 mb-2">
+            <p class="text-xs uppercase text-gray-400 font-semibold">服务器</p>
+            <button id="add-server-btn" class="text-xs text-secondary hover:text-white transition-colors">
+              <i class="fa fa-plus-circle mr-1"></i>添加
+            </button>
+          </div>
+          
+          <!-- 服务器项目 -->
+          <div class="server-item active">
+            <div class="flex items-center space-x-3 px-3 py-2.5 rounded-lg bg-primary/20 cursor-pointer">
+              <div class="relative">
+                <i class="fa fa-server w-5 text-center"></i>
+                <span class="absolute -top-1 -right-1 w-2 h-2 bg-success rounded-full"></span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium truncate">生产服务器 #1</p>
+                <p class="text-xs text-gray-400 truncate">192.168.1.100:22</p>
+              </div>
+              <i class="fa fa-chevron-down text-xs text-gray-400"></i>
+            </div>
+            <!-- 服务器快捷操作 -->
+            <div class="bg-primary/10 px-6 py-2 space-y-1 hidden md:block">
+              <a href="#" class="block text-xs text-gray-300 hover:text-white py-1 transition-colors">
+                <i class="fa fa-terminal mr-2 w-4 text-center"></i>快速连接
+              </a>
+              <a href="#" class="block text-xs text-gray-300 hover:text-white py-1 transition-colors">
+                <i class="fa fa-refresh mr-2 w-4 text-center"></i>重启服务
+              </a>
+              <a href="#" class="block text-xs text-gray-300 hover:text-white py-1 transition-colors">
+                <i class="fa fa-cog mr-2 w-4 text-center"></i>服务器设置
+              </a>
+            </div>
+          </div>
+          
+          <div class="server-item">
+            <div class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light cursor-pointer transition-colors">
+              <div class="relative">
+                <i class="fa fa-database w-5 text-center"></i>
+                <span class="absolute -top-1 -right-1 w-2 h-2 bg-success rounded-full"></span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium truncate">数据库服务器</p>
+                <p class="text-xs text-gray-400 truncate">192.168.1.101:22</p>
+              </div>
+              <i class="fa fa-chevron-right text-xs text-gray-400"></i>
+            </div>
+          </div>
+          
+          <div class="server-item">
+            <div class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light cursor-pointer transition-colors">
+              <div class="relative">
+                <i class="fa fa-globe w-5 text-center"></i>
+                <span class="absolute -top-1 -right-1 w-2 h-2 bg-warning rounded-full animate-pulse-slow"></span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium truncate">Web服务器集群</p>
+                <p class="text-xs text-gray-400 truncate">192.168.1.102:22</p>
+              </div>
+              <i class="fa fa-chevron-right text-xs text-gray-400"></i>
+            </div>
+          </div>
+          
+          <div class="server-item">
+            <div class="flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-dark-light cursor-pointer transition-colors">
+              <div class="relative">
+                <i class="fa fa-server w-5 text-center"></i>
+                <span class="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full"></span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium truncate">备份服务器</p>
+                <p class="text-xs text-gray-400 truncate">192.168.1.103:22</p>
+              </div>
+              <i class="fa fa-chevron-right text-xs text-gray-400"></i>
+            </div>
+          </div>
+        </div>
+      </nav>
+      
+      <!-- 侧边栏用户信息 - 精简版 -->
+      <div class="p-4 border-t border-dark-light bg-dark-light/50">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+            <i class="fa fa-user text-white"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">当前会话</p>
+            <p class="text-xs text-gray-300 truncate">管理员已登录</p>
+          </div>
+          <button class="text-gray-300 hover:text-white transition-colors p-1.5 rounded-full hover:bg-dark">
+            <i class="fa fa-sign-out"></i>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区域 -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- 顶部导航栏 -->
+      <header class="bg-white shadow-sm z-20">
+        <div class="container mx-auto px-4">
+          <div class="flex items-center justify-between h-16">
+            <!-- 左侧：菜单按钮和搜索框 -->
+            <div class="flex items-center space-x-4">
+              <button id="sidebar-toggle" class="md:hidden text-gray-500 hover:text-primary">
+                <i class="fa fa-bars text-xl"></i>
+              </button>
+              
+              <div class="relative w-64 hidden md:block">
+                <input type="text" placeholder="搜索服务器、命令或帮助..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all">
+                <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+              </div>
+            </div>
+            
+            <!-- 右侧：通知和用户菜单 -->
+            <div class="flex items-center space-x-5">
+              <!-- 通知按钮 -->
+              <div class="relative">
+                <button class="text-gray-500 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-gray-100">
+                  <i class="fa fa-bell text-xl"></i>
+                  <span class="absolute -top-1 -right-1 w-5 h-5 bg-danger rounded-full text-white text-xs flex items-center justify-center">5</span>
+                </button>
+              </div>
+              
+              <!-- 快捷设置按钮 -->
+              <div class="relative">
+                <button class="text-gray-500 hover:text-primary transition-colors p-1.5 rounded-full hover:bg-gray-100">
+                  <i class="fa fa-cog text-xl"></i>
+                </button>
+              </div>
+              
+              <div class="hidden md:block h-8 w-px bg-gray-200"></div>
+              
+              <!-- 用户下拉菜单 - 功能完整版 -->
+              <div class="relative" id="user-menu-container">
+                <button id="user-menu-button" class="flex items-center space-x-3 focus:outline-none">
+                  <img src="https://picsum.photos/id/1005/200/200" alt="用户头像" class="w-8 h-8 rounded-full border-2 border-transparent hover:border-primary transition-colors">
+                  <span class="text-sm font-medium hidden md:inline-block">系统管理员</span>
+                  <i class="fa fa-chevron-down text-xs text-gray-500 hidden md:block"></i>
+                </button>
+                
+                <!-- 下拉菜单 -->
+                <div id="user-dropdown-menu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 user-menu-enter">
+                  <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                    <i class="fa fa-user-circle mr-2 w-4 text-center"></i>个人资料
+                  </a>
+                  <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                    <i class="fa fa-id-card mr-2 w-4 text-center"></i>账户信息
+                  </a>
+                  <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                    <i class="fa fa-cog mr-2 w-4 text-center"></i>偏好设置
+                  </a>
+                  <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                    <i class="fa fa-lock mr-2 w-4 text-center"></i>安全中心
+                  </a>
+                  <div class="border-t border-gray-100 my-1"></div>
+                  <a href="#" class="block px-4 py-2 text-sm text-danger hover:bg-gray-100 transition-colors">
+                    <i class="fa fa-sign-out mr-2 w-4 text-center"></i>退出登录
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- 页面内容区域 -->
+      <div class="flex-1 overflow-y-auto p-4 md:p-6 bg-light-gray" id="page-content">
+        <!-- 页面标题和服务器信息 -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-6">
+          <div>
+            <h1 class="text-[clamp(1.5rem,3vw,2.2rem)] font-bold">生产服务器 #1</h1>
+            <div class="flex items-center space-x-4 mt-1 text-sm text-gray-500">
+              <div class="flex items-center">
+                <i class="fa fa-server mr-2 text-primary"></i>
+                <span>192.168.1.100:22</span>
+              </div>
+              <div class="flex items-center">
+                <i class="fa fa-clock-o mr-2 text-primary"></i>
+                <span>运行中: 12天 4小时</span>
+              </div>
+              <div class="flex items-center">
+                <i class="fa fa-refresh mr-2 text-primary"></i>
+                <span>最后更新: 10秒前</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="flex space-x-3 mt-4 md:mt-0">
+            <button class="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm flex items-center">
+              <i class="fa fa-download mr-2 text-gray-500"></i>
+              导出报告
+            </button>
+            <button class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm flex items-center">
+              <i class="fa fa-terminal mr-2"></i>
+              启动SSH终端
+            </button>
+          </div>
+        </div>
+        
+        <!-- 系统状态卡片 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+          <!-- CPU 使用率 -->
+          <div class="bg-white rounded-xl shadow-sm p-5 card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-gray-500 text-sm font-medium">CPU 使用率</p>
+                <div class="mt-2 flex items-end">
+                  <h3 class="text-3xl font-bold">34%</h3>
+                  <span class="ml-2 text-success text-sm flex items-center">
+                    <i class="fa fa-arrow-down mr-1"></i> 5%
+                  </span>
+                </div>
+                <p class="text-gray-500 text-xs mt-1">8核 @ 3.2GHz</p>
+              </div>
+              <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <i class="fa fa-microchip text-xl"></i>
+              </div>
+            </div>
+            <div class="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-primary rounded-full" style="width: 34%"></div>
+            </div>
+          </div>
+          
+          <!-- 内存使用 -->
+          <div class="bg-white rounded-xl shadow-sm p-5 card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-gray-500 text-sm font-medium">内存使用</p>
+                <div class="mt-2 flex items-end">
+                  <h3 class="text-3xl font-bold">68%</h3>
+                  <span class="ml-2 text-warning text-sm flex items-center">
+                    <i class="fa fa-arrow-up mr-1"></i> 3%
+                  </span>
+                </div>
+                <p class="text-gray-500 text-xs mt-1">16GB 总内存</p>
+              </div>
+              <div class="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center text-warning">
+                <i class="fa fa-memory text-xl"></i>
+              </div>
+            </div>
+            <div class="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-warning rounded-full" style="width: 68%"></div>
+            </div>
+          </div>
+          
+          <!-- 磁盘空间 -->
+          <div class="bg-white rounded-xl shadow-sm p-5 card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-gray-500 text-sm font-medium">磁盘空间</p>
+                <div class="mt-2 flex items-end">
+                  <h3 class="text-3xl font-bold">42%</h3>
+                  <span class="ml-2 text-success text-sm flex items-center">
+                    <i class="fa fa-arrow-down mr-1"></i> 1%
+                  </span>
+                </div>
+                <p class="text-gray-500 text-xs mt-1">98GB 总容量</p>
+              </div>
+              <div class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center text-success">
+                <i class="fa fa-hdd-o text-xl"></i>
+              </div>
+            </div>
+            <div class="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-success rounded-full" style="width: 42%"></div>
+            </div>
+          </div>
+          
+          <!-- 网络流量 -->
+          <div class="bg-white rounded-xl shadow-sm p-5 card-hover border border-gray-100">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-gray-500 text-sm font-medium">网络流量</p>
+                <div class="mt-2 flex items-end">
+                  <h3 class="text-3xl font-bold">1.2G</h3>
+                  <span class="ml-2 text-success text-sm flex items-center">
+                    <i class="fa fa-arrow-down mr-1"></i> 12%
+                  </span>
+                </div>
+                <p class="text-gray-500 text-xs mt-1">每秒传输速率</p>
+              </div>
+              <div class="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
+                <i class="fa fa-exchange text-xl"></i>
+              </div>
+            </div>
+            <div class="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full bg-secondary rounded-full" style="width: 58%"></div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 图表和性能数据 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <!-- 系统性能趋势图 -->
+          <div class="lg:col-span-2 bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+            <div class="flex flex-wrap items-center justify-between mb-5 gap-3">
+              <h3 class="font-bold text-lg">系统性能趋势</h3>
+              <div class="flex flex-wrap gap-2">
+                <button class="px-3 py-1 text-xs bg-primary text-white rounded-full">实时</button>
+                <button class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition-colors">今日</button>
+                <button class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition-colors">本周</button>
+                <button class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition-colors">本月</button>
+              </div>
+            </div>
+            <div class="h-80">
+              <canvas id="performanceChart"></canvas>
+            </div>
+          </div>
+          
+          <!-- 网络流量图 -->
+          <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-bold text-lg">网络流量</h3>
+              <div class="flex items-center space-x-1">
+                <span class="w-3 h-3 rounded-full bg-success inline-block"></span>
+                <span class="text-xs text-gray-500">入站</span>
+                <span class="w-3 h-3 rounded-full bg-primary inline-block ml-3"></span>
+                <span class="text-xs text-gray-500">出站</span>
+              </div>
+            </div>
+            <div class="h-80">
+              <canvas id="networkChart"></canvas>
+            </div>
+          </div>
+        </div>
+        
+        <!-- SSH终端和进程信息 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- SSH终端 -->
+          <div class="lg:col-span-2 bg-dark rounded-xl shadow-sm overflow-hidden border border-dark-light flex flex-col h-[500px]">
+            <div class="bg-dark-light p-4 flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <i class="fa fa-terminal text-white"></i>
+                <h3 class="font-bold text-white">SSH 终端</h3>
+                <span class="text-xs bg-success/20 text-success px-2 py-0.5 rounded-full flex items-center">
+                  <span class="w-2 h-2 bg-success rounded-full mr-1"></span>已连接
+                </span>
+              </div>
+              <div class="flex items-center space-x-2">
+                <button class="text-gray-400 hover:text-white transition-colors px-2 py-1 text-sm rounded hover:bg-dark">
+                  <i class="fa fa-expand mr-1"></i>全屏
+                </button>
+                <button class="text-gray-400 hover:text-white transition-colors px-2 py-1 text-sm rounded hover:bg-dark">
+                  <i class="fa fa-refresh mr-1"></i>重连
+                </button>
+                <button class="text-gray-400 hover:text-white transition-colors px-2 py-1 text-sm rounded hover:bg-dark">
+                  <i class="fa fa-times mr-1"></i>断开
+                </button>
+              </div>
+            </div>
+            
+            <!-- 终端窗口 -->
+            <div id="terminal-output" class="flex-1 overflow-y-auto p-4 bg-dark font-mono text-gray-200 text-sm scrollbar-thin">
+              <div class="mb-1 text-success">Welcome to Ubuntu 22.04.2 LTS (GNU/Linux 5.15.0-60-generic x86_64)</div>
+              <div class="mb-1"></div>
+              <div class="mb-1"> * Documentation:  https://help.ubuntu.com</div>
+              <div class="mb-1"> * Management:     https://landscape.canonical.com</div>
+              <div class="mb-1"> * Support:        https://ubuntu.com/advantage</div>
+              <div class="mb-1"></div>
+              <div class="mb-1">  System information as of Fri Aug 15 14:30:00 UTC 2025</div>
+              <div class="mb-1"></div>
+              <div class="mb-1">  System load:  0.34               Processes:             189</div>
+              <div class="mb-1">  Usage of /:   42.0% of 98.45GB   Users logged in:       1</div>
+              <div class="mb-1">  Memory usage: 68%                IPv4 address for eth0: 192.168.1.100</div>
+              <div class="mb-1">  Swap usage:   12%                </div>
+              <div class="mb-1"></div>
+              <div class="mb-1 text-primary">admin@prod-server-1:~$ <span class="terminal-cursor">_</span></div>
+            </div>
+            
+            <!-- 终端输入 -->
+            <div class="bg-dark-light p-3 border-t border-dark">
+              <div class="flex">
+                <input type="text" id="terminal-input" placeholder="输入命令..." class="flex-1 bg-dark border border-dark-light rounded-l-lg px-4 py-2 text-white focus:outline-none focus:border-primary font-mono text-sm">
+                <button id="send-command" class="bg-primary hover:bg-primary/90 text-white px-4 rounded-r-lg transition-colors">
+                  <i class="fa fa-paper-plane"></i>
+                </button>
+              </div>
+              <div class="flex flex-wrap gap-2 mt-2">
+                <span class="text-xs text-gray-400 px-2 py-0.5 bg-dark rounded">常用命令:</span>
+                <button class="text-xs text-gray-300 px-2 py-0.5 bg-dark rounded hover:bg-dark-light transition-colors">top</button>
+                <button class="text-xs text-gray-300 px-2 py-0.5 bg-dark rounded hover:bg-dark-light transition-colors">df -h</button>
+                <button class="text-xs text-gray-300 px-2 py-0.5 bg-dark rounded hover:bg-dark-light transition-colors">free -m</button>
+                <button class="text-xs text-gray-300 px-2 py-0.5 bg-dark rounded hover:bg-dark-light transition-colors">netstat</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 进程和服务信息 -->
+          <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100 flex flex-col h-[500px]">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 class="font-bold text-lg">运行进程</h3>
+                <p class="text-gray-500 text-sm mt-0.5">显示CPU使用率最高的进程</p>
+              </div>
+              <button class="text-gray-400 hover:text-primary transition-colors">
+                <i class="fa fa-ellipsis-v"></i>
+              </button>
+            </div>
+            
+            <!-- 进程列表 -->
+            <div class="flex-1 overflow-y-auto scrollbar-thin">
+              <table class="w-full">
+                <thead class="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">进程</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">CPU</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">内存</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">状态</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                          <i class="fa fa-database"></i>
+                        </div>
+                        <div>
+                          <p class="font-medium text-sm">mysql</p>
+                          <p class="text-gray-500 text-xs">root:3306</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3 text-sm">12.5%</td>
+                    <td class="px-5 py-3 text-sm">18.2%</td>
+                    <td class="px-5 py-3">
+                      <span class="px-2 py-1 text-xs bg-success/10 text-success rounded-full">运行中</span>
+                    </td>
+                  </tr>
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                          <i class="fa fa-globe"></i>
+                        </div>
+                        <div>
+                          <p class="font-medium text-sm">nginx</p>
+                          <p class="text-gray-500 text-xs">www-data:80</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3 text-sm">8.3%</td>
+                    <td class="px-5 py-3 text-sm">6.7%</td>
+                    <td class="px-5 py-3">
+                      <span class="px-2 py-1 text-xs bg-success/10 text-success rounded-full">运行中</span>
+                    </td>
+                  </tr>
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                          <i class="fa fa-code"></i>
+                        </div>
+                        <div>
+                          <p class="font-medium text-sm">node</p>
+                          <p class="text-gray-500 text-xs">app:3000</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3 text-sm">6.2%</td>
+                    <td class="px-5 py-3 text-sm">12.4%</td>
+                    <td class="px-5 py-3">
+                      <span class="px-2 py-1 text-xs bg-success/10 text-success rounded-full">运行中</span>
+                    </td>
+                  </tr>
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                          <i class="fa fa-search"></i>
+                        </div>
+                        <div>
+                          <p class="font-medium text-sm">elasticsearch</p>
+                          <p class="text-gray-500 text-xs">elastic:9200</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3 text-sm">5.8%</td>
+                    <td class="px-5 py-3 text-sm">22.1%</td>
+                    <td class="px-5 py-3">
+                      <span class="px-2 py-1 text-xs bg-warning/10 text-warning rounded-full">高负载</span>
+                    </td>
+                  </tr>
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                          <i class="fa fa-cogs"></i>
+                        </div>
+                        <div>
+                          <p class="font-medium text-sm">redis-server</p>
+                          <p class="text-gray-500 text-xs">redis:6379</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3 text-sm">1.2%</td>
+                    <td class="px-5 py-3 text-sm">4.3%</td>
+                    <td class="px-5 py-3">
+                      <span class="px-2 py-1 text-xs bg-success/10 text-success rounded-full">运行中</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- 底部操作区 -->
+            <div class="p-4 border-t border-gray-100 bg-gray-50">
+              <div class="flex space-x-3">
+                <button class="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center text-sm">
+                  <i class="fa fa-refresh mr-2"></i>
+                  刷新列表
+                </button>
+                <button class="py-2 px-3 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+                  <i class="fa fa-filter text-gray-500"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+  <!-- 添加服务器模态框 -->
+  <div id="add-server-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-300">
+    <div class="bg-white rounded-xl w-full max-w-md mx-4 transform transition-all scale-95 translate-y-4" id="modal-content">
+      <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="font-bold text-lg">添加新服务器</h3>
+        <button id="close-modal" class="text-gray-400 hover:text-gray-600 transition-colors">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+      <div class="p-5">
+        <form id="add-server-form">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">服务器名称 <span class="text-danger">*</span></label>
+            <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" placeholder="例如：生产服务器 #2" required>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">IP 地址或主机名 <span class="text-danger">*</span></label>
+            <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" placeholder="例如：192.168.1.101" required>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">SSH 端口</label>
+            <input type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" value="22" min="1" max="65535">
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
+            <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" placeholder="SSH 登录用户名" required>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">认证方式</label>
+            <div class="flex space-x-4">
+              <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" name="auth-method" value="password" checked class="text-primary focus:ring-primary">
+                <span>密码</span>
+              </label>
+              <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" name="auth-method" value="key" class="text-primary focus:ring-primary">
+                <span>SSH 密钥</span>
+              </label>
+            </div>
+          </div>
+          
+          <div id="password-auth" class="mb-5">
+            <label class="block text-sm font-medium text-gray-700 mb-1">密码 <span class="text-danger">*</span></label>
+            <input type="password" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" placeholder="SSH 登录密码" required>
+          </div>
+          
+          <div id="key-auth" class="mb-5 hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1">私钥</label>
+            <textarea class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all font-mono text-sm h-32" placeholder="粘贴你的SSH私钥..."></textarea>
+            <p class="text-xs text-gray-500 mt-1">或</p>
+            <div class="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer">
+              <i class="fa fa-upload text-gray-400 text-xl mb-1"></i>
+              <p class="text-sm text-gray-500">上传私钥文件</p>
+            </div>
+          </div>
+          
+          <div class="flex space-x-3">
+            <button type="button" id="cancel-add-server" class="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">取消</button>
+            <button type="submit" class="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">添加服务器</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 侧边栏切换功能
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebarClose = document.getElementById('sidebar-close');
+    
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('hidden');
+      sidebar.classList.toggle('absolute');
+      sidebar.classList.toggle('h-full');
+    });
+    
+    sidebarClose.addEventListener('click', () => {
+      sidebar.classList.add('hidden');
+    });
+    
+    // 服务器项目展开/折叠
+    const serverItems = document.querySelectorAll('.server-item');
+    serverItems.forEach(item => {
+      const header = item.querySelector('div:first-child');
+      const content = item.querySelector('div:last-child');
+      const chevron = header.querySelector('.fa-chevron-down, .fa-chevron-right');
+      
+      header.addEventListener('click', () => {
+        // 移除其他所有项的active状态
+        serverItems.forEach(otherItem => {
+          if (otherItem !== item) {
+            otherItem.classList.remove('active');
+            otherItem.querySelector('div:last-child')?.classList.add('hidden');
+            otherItem.querySelector('.fa-chevron-down')?.classList.replace('fa-chevron-down', 'fa-chevron-right');
+          }
+        });
+        
+        // 切换当前项的状态
+        item.classList.toggle('active');
+        if (content) {
+          content.classList.toggle('hidden');
+        }
+        if (chevron) {
+          if (chevron.classList.contains('fa-chevron-right')) {
+            chevron.classList.replace('fa-chevron-right', 'fa-chevron-down');
+          } else {
+            chevron.classList.replace('fa-chevron-down', 'fa-chevron-right');
+          }
+        }
+      });
+    });
+    
+    // 用户下拉菜单功能
+    const userMenuButton = document.getElementById('user-menu-button');
+    const userDropdownMenu = document.getElementById('user-dropdown-menu');
+    
+    userMenuButton.addEventListener('click', () => {
+      userDropdownMenu.classList.toggle('hidden');
+    });
+    
+    // 点击页面其他地方关闭用户菜单
+    document.addEventListener('click', (e) => {
+      if (!document.getElementById('user-menu-container').contains(e.target)) {
+        userDropdownMenu.classList.add('hidden');
+      }
+    });
+    
+    // 认证方式切换
+    const authMethods = document.querySelectorAll('input[name="auth-method"]');
+    const passwordAuth = document.getElementById('password-auth');
+    const keyAuth = document.getElementById('key-auth');
+    
+    authMethods.forEach(radio => {
+      radio.addEventListener('change', () => {
+        if (radio.value === 'password') {
+          passwordAuth.classList.remove('hidden');
+          keyAuth.classList.add('hidden');
+          passwordAuth.querySelector('input').required = true;
+          keyAuth.querySelector('textarea').required = false;
+        } else {
+          passwordAuth.classList.add('hidden');
+          keyAuth.classList.remove('hidden');
+          passwordAuth.querySelector('input').required = false;
+          keyAuth.querySelector('textarea').required = true;
+        }
+      });
+    });
+    
+    // 模态框控制
+    const addServerBtn = document.getElementById('add-server-btn');
+    const addServerModal = document.getElementById('add-server-modal');
+    const closeModal = document.getElementById('close-modal');
+    const cancelAddServer = document.getElementById('cancel-add-server');
+    const modalContent = document.getElementById('modal-content');
+    const addServerForm = document.getElementById('add-server-form');
+    
+    function openModal() {
+      addServerModal.classList.remove('hidden');
+      // 触发重排后添加动画类
+      setTimeout(() => {
+        addServerModal.classList.add('opacity-100');
+        modalContent.classList.remove('scale-95', 'translate-y-4');
+        modalContent.classList.add('scale-100', 'translate-y-0');
+      }, 10);
+      document.body.style.overflow = 'hidden';
+    }
+    
+    function closeModalFunc() {
+      addServerModal.classList.remove('opacity-100');
+      modalContent.classList.remove('scale-100', 'translate-y-0');
+      modalContent.classList.add('scale-95', 'translate-y-4');
+      
+      setTimeout(() => {
+        addServerModal.classList.add('hidden');
+        document.body.style.overflow = '';
+      }, 300);
+    }
+    
+    addServerBtn.addEventListener('click', openModal);
+    closeModal.addEventListener('click', closeModalFunc);
+    cancelAddServer.addEventListener('click', closeModalFunc);
+    
+    // 点击模态框外部关闭
+    addServerModal.addEventListener('click', (e) => {
+      if (e.target === addServerModal) {
+        closeModalFunc();
+      }
+    });
+    
+    // 表单提交处理
+    addServerForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      // 模拟表单提交
+      const submitBtn = addServerForm.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+      
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>处理中...';
+      
+      setTimeout(() => {
+        alert('服务器添加成功！');
+        closeModalFunc();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+        addServerForm.reset();
+      }, 1500);
+    });
+    
+    // 终端功能
+    const terminalInput = document.getElementById('terminal-input');
+    const sendCommand = document.getElementById('send-command');
+    const terminalOutput = document.getElementById('terminal-output');
+    const commandButtons = document.querySelectorAll('#terminal-output + div button:not(#send-command)');
+    
+    // 添加内容到终端
+    function addToTerminal(text, isCommand = false) {
+      const line = document.createElement('div');
+      line.className = 'mb-1';
+      
+      if (isCommand) {
+        line.classList.add('text-primary');
+        line.textContent = `admin@prod-server-1:~$ ${text}`;
+      } else {
+        line.textContent = text;
+      }
+      
+      // 在光标前插入新行
+      const cursorLine = terminalOutput.lastElementChild;
+      terminalOutput.insertBefore(line, cursorLine);
+      
+      // 滚动到底部
+      terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    }
+    
+    // 处理命令
+    function handleCommand(command) {
+      if (!command.trim()) return;
+      
+      addToTerminal(command, true);
+      
+      // 模拟命令执行延迟
+      setTimeout(() => {
+        switch(command.toLowerCase()) {
+          case 'ls':
+            addToTerminal('app  logs  backups  config  scripts  temp');
+            break;
+          case 'top':
+            addToTerminal('top - 14:45:22 up 12 days,  4:14,  1 user,  load average: 0.34, 0.45, 0.52');
+            addToTerminal('Tasks: 189 total,   1 running, 188 sleeping,   0 stopped,   0 zombie');
+            addToTerminal('%Cpu(s):  3.4 us,  1.2 sy,  0.0 ni, 95.3 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st');
+            addToTerminal('MiB Mem :  15987.2 total,   2145.3 free,  10854.7 used,   3000.2 buff/cache');
+            addToTerminal('MiB Swap:   2048.0 total,   1792.3 free,    255.7 used.   4567.8 avail Mem');
+            break;
+          case 'df -h':
+            addToTerminal('Filesystem      Size  Used Avail Use% Mounted on');
+            addToTerminal('/dev/sda1        99G   42G   57G  42% /');
+            addToTerminal('tmpfs           7.8G     0  7.8G   0% /dev/shm');
+            addToTerminal('/dev/sdb1       493G  128G  340G  28% /data');
+            break;
+          case 'free -m':
+            addToTerminal('              total        used        free      shared  buff/cache   available');
+            addToTerminal('Mem:          15987       10854        2145         320        3000        4567');
+            addToTerminal('Swap:          2048         255        1793');
+            break;
+          case 'netstat':
+            addToTerminal('Active Internet connections (w/o servers)');
+            addToTerminal('Proto Recv-Q Send-Q Local Address           Foreign Address         State');
+            addToTerminal('tcp        0      0 prod-server-1:ssh       192.168.1.1:54321      ESTABLISHED');
+            addToTerminal('tcp        0      0 prod-server-1:http      203.0.113.5:8080       ESTABLISHED');
+            addToTerminal('tcp        0      0 prod-server-1:mysql     db-client:34567        ESTABLISHED');
+            break;
+          default:
+            addToTerminal(`bash: ${command}: command not found`);
+        }
+      }, 800);
+      
+      // 清空输入
+      terminalInput.value = '';
+    }
+    
+    // 发送命令按钮事件
+    sendCommand.addEventListener('click', () => {
+      handleCommand(terminalInput.value);
+    });
+    
+    // 输入框回车事件
+    terminalInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        handleCommand(terminalInput.value);
+      }
+    });
+    
+    // 常用命令按钮
+    commandButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        terminalInput.value = btn.textContent;
+        terminalInput.focus();
+      });
+    });
+    
+    // 性能图表
+    const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+    const performanceChart = new Chart(performanceCtx, {
+      type: 'line',
+      data: {
+        labels: ['13:30', '13:40', '13:50', '14:00', '14:10', '14:20', '14:30', '14:40', '14:50'],
+        datasets: [
+          {
+            label: 'CPU 使用率 (%)',
+            data: [32, 35, 38, 42, 39, 36, 34, 35, 34],
+            borderColor: '#1E40AF',
+            backgroundColor: 'rgba(30, 64, 175, 0.1)',
+            tension: 0.4,
+            fill: true,
+            yAxisID: 'y'
+          },
+          {
+            label: '内存使用率 (%)',
+            data: [65, 66, 68, 70, 69, 68, 68, 67, 68],
+            borderColor: '#F59E0B',
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            tension: 0.4,
+            fill: true,
+            yAxisID: 'y'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        animation: {
+          duration: 1000,
+          easing: 'easeOutQuart'
+        },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              boxWidth: 12,
+              usePointStyle: true,
+              pointStyle: 'circle'
+            }
+          },
+          tooltip: {
+            padding: 10,
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+            titleFont: {
+              size: 13
+            },
+            bodyFont: {
+              size: 12
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              display: false
+            }
+          },
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              callback: function(value) {
+                return value + '%';
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // 网络流量图表
+    const networkCtx = document.getElementById('networkChart').getContext('2d');
+    const networkChart = new Chart(networkCtx, {
+      type: 'bar',
+      data: {
+        labels: ['13:30', '13:40', '13:50', '14:00', '14:10', '14:20', '14:30', '14:40', '14:50'],
+        datasets: [
+          {
+            label: '入站 (GB/s)',
+            data: [0.9, 1.1, 1.3, 1.5, 1.4, 1.3, 1.2, 1.2, 1.2],
+            backgroundColor: 'rgba(16, 185, 129, 0.7)',
+            borderRadius: 4
+          },
+          {
+            label: '出站 (GB/s)',
+            data: [0.7, 0.8, 0.9, 1.1, 1.0, 0.9, 0.9, 0.8, 0.8],
+            backgroundColor: 'rgba(30, 64, 175, 0.7)',
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: {
+          duration: 1000,
+          easing: 'easeOutQuart'
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            padding: 10,
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+            titleFont: {
+              size: 13
+            },
+            bodyFont: {
+              size: 12
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: {
+              display: false
+            }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return value + ' GB/s';
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // 模拟实时数据更新
+    setInterval(() => {
+      // 更新CPU和内存数据
+      const lastCPU = performanceChart.data.datasets[0].data.slice(-1)[0];
+      const lastMemory = performanceChart.data.datasets[1].data.slice(-1)[0];
+      
+      // 生成小幅波动的新数据
+      const newCPU = Math.max(20, Math.min(80, lastCPU + (Math.random() * 4 - 2)));
+      const newMemory = Math.max(50, Math.min(90, lastMemory + (Math.random() * 3 - 1.5)));
+      
+      // 更新图表数据
+      performanceChart.data.datasets[0].data.push(newCPU);
+      performanceChart.data.datasets[1].data.push(newMemory);
+      performanceChart.data.labels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+      
+      // 只保留最近9个数据点
+      if (performanceChart.data.labels.length > 9) {
+        performanceChart.data.datasets.forEach(dataset => dataset.data.shift());
+        performanceChart.data.labels.shift();
+      }
+      
+      performanceChart.update('none');
+      
+      // 更新网络图表数据
+      const lastInbound = networkChart.data.datasets[0].data.slice(-1)[0];
+      const lastOutbound = networkChart.data.datasets[1].data.slice(-1)[0];
+      
+      const newInbound = Math.max(0.5, Math.min(2, lastInbound + (Math.random() * 0.3 - 0.15)));
+      const newOutbound = Math.max(0.3, Math.min(1.5, lastOutbound + (Math.random() * 0.2 - 0.1)));
+      
+      networkChart.data.datasets[0].data.push(newInbound);
+      networkChart.data.datasets[1].data.push(newOutbound);
+      networkChart.data.labels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+      
+      if (networkChart.data.labels.length > 9) {
+        networkChart.data.datasets.forEach(dataset => dataset.data.shift());
+        networkChart.data.labels.shift();
+      }
+      
+      networkChart.update('none');
+    }, 10000); // 每10秒更新一次
+  </script>
+</body>
+</html>
+    
