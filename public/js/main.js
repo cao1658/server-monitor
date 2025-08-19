@@ -1,637 +1,762 @@
-// 全局变量
-let currentUser = null;
-let currentPage = 'login';
-let serversList = [];
-let monitoringData = {};
-let refreshInterval = null;
+// 服务器监控系统主要JavaScript文件
+class ServerMonitor {
+  constructor() {
+    this.serversList = [];
+    this.currentPage = 'dashboard';
+    this.init();
+  }
 
-// DOM加载完成后执行
-document.addEventListener('DOMContentLoaded', () => {
+  // 初始化应用
+  init() {
+    // 检查认证状态
+    if (!this.checkAuth()) {
+      return;
+    }
+
+    // 初始化事件监听器
+    this.initEventListeners();
+    
+    // 加载初始数据
+    this.loadDashboardData();
+    
+    // 设置定时刷新
+    this.setupAutoRefresh();
+  }
+
+  // 检查用户认证状态
+  checkAuth() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      this.redirectToAuth();
+      return false;
+    }
+    
+    // 验证token有效性
+    this.request('/api/auth/verify')
+      .then(() => {
+        this.showDashboard();
+      })
+      .catch(() => {
+        localStorage.removeItem('token');
+        this.redirectToAuth();
+      });
+    
+    return true;
+  }
+
+  // 重定向到认证页面
+  redirectToAuth() {
+    window.location.href = '/auth.html';
+  }
+
   // 初始化事件监听器
-  initEventListeners();
-  
-  // 检查用户是否已登录
-  checkAuthStatus();
-});
-
-// 初始化事件监听器
-function initEventListeners() {
-  // 导航菜单点击事件
-  document.querySelectorAll('.nav-link').forEach(link => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const page = e.target.closest('.nav-link').dataset.page;
-      navigateTo(page);
+  initEventListeners() {
+    // 侧边栏导航
+    document.querySelectorAll('[data-page]').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = e.target.closest('[data-page]').dataset.page;
+        this.navigateTo(page);
+      });
     });
-  });
-  
-  // 登录表单提交
-  document.getElementById('loginForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    login();
-  });
-  
-  // 注册表单提交
-  document.getElementById('registerForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    register();
-  });
-  
-  // 显示注册页面按钮
-  document.getElementById('showRegisterBtn').addEventListener('click', () => {
-    document.getElementById('loginPage').classList.add('d-none');
-    document.getElementById('registerPage').classList.remove('d-none');
-  });
-  
-  // 显示登录页面按钮
-  document.getElementById('showLoginBtn').addEventListener('click', () => {
-    document.getElementById('registerPage').classList.add('d-none');
-    document.getElementById('loginPage').classList.remove('d-none');
-  });
-  
-  // 退出登录按钮
-  document.getElementById('logoutBtn').addEventListener('click', logout);
-  document.getElementById('logoutLink').addEventListener('click', logout);
-  
-  // 刷新按钮
-  document.getElementById('refreshBtn').addEventListener('click', () => {
-    refreshCurrentPage();
-  });
-}
 
-// 检查用户是否已登录
-async function checkAuthStatus() {
-  const token = localStorage.getItem('token');
-  
-  if (!token) {
-    showAuthPages();
-    return;
-  }
-  
-  try {
-    const response = await fetch('/api/auth/me', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
+    // 刷新按钮
+    document.getElementById('refreshBtn')?.addEventListener('click', () => {
+      this.refreshCurrentPage();
+    });
+
+    // 退出登录
+    document.getElementById('logoutBtn')?.addEventListener('click', () => {
+      this.logout();
     });
     
-    if (response.ok) {
-      const data = await response.json();
-      currentUser = data.data;
-      showAppInterface();
-      navigateTo('dashboard');
-    } else {
-      // Token无效或过期
-      localStorage.removeItem('token');
-      showAuthPages();
+    document.getElementById('logoutLink')?.addEventListener('click', () => {
+      this.logout();
+    });
+
+    // 设置标签页切换
+    document.querySelectorAll('#settingsTabs a').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.switchSettingsTab(e.target.dataset.tab);
+      });
+    });
+
+    // 添加服务器模态框事件
+    this.initAddServerModal();
+  }
+
+  // 初始化添加服务器模态框
+  initAddServerModal() {
+    // 认证方式切换
+    document.querySelectorAll('input[name="authMethod"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const passwordAuth = document.getElementById('passwordAuth');
+        const keyAuth = document.getElementById('keyAuth');
+        
+        if (e.target.value === 'password') {
+          passwordAuth.classList.remove('d-none');
+          keyAuth.classList.add('d-none');
+          document.getElementById('serverPassword').required = true;
+          document.getElementById('serverPrivateKey').required = false;
+        } else {
+          passwordAuth.classList.add('d-none');
+          keyAuth.classList.remove('d-none');
+          document.getElementById('serverPassword').required = false;
+          document.getElementById('serverPrivateKey').required = true;
+        }
+      });
+    });
+
+    // 保存服务器按钮
+    document.getElementById('saveServerBtn')?.addEventListener('click', () => {
+      this.saveServer();
+    });
+
+    // 模态框关闭时重置表单
+    document.getElementById('addServerModal')?.addEventListener('hidden.bs.modal', () => {
+      this.resetAddServerForm();
+    });
+  }
+
+  // 保存服务器
+  async saveServer() {
+    const form = document.getElementById('addServerForm');
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
     }
-  } catch (error) {
-    console.error('检查认证状态出错:', error);
-    showAuthPages();
-  }
-}
 
-// 显示认证页面
-function showAuthPages() {
-  document.getElementById('sidebar').classList.add('d-none');
-  document.getElementById('pageTitle').parentElement.classList.add('d-none');
-  document.getElementById('loginPage').classList.remove('d-none');
-  document.getElementById('dashboardPage').classList.add('d-none');
-  
-  // 清除可能的刷新间隔
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
-}
+    const formData = new FormData(form);
+    const authMethod = document.querySelector('input[name="authMethod"]:checked').value;
+    
+    const serverData = {
+      name: formData.get('serverName') || document.getElementById('serverName').value,
+      host: formData.get('serverHost') || document.getElementById('serverHost').value,
+      port: parseInt(document.getElementById('serverPort').value) || 22,
+      username: document.getElementById('serverUsername').value,
+      os: document.getElementById('serverOS').value || 'linux',
+      authMethod: authMethod,
+      description: document.getElementById('serverDescription').value
+    };
 
-// 显示应用界面
-function showAppInterface() {
-  document.getElementById('sidebar').classList.remove('d-none');
-  document.getElementById('pageTitle').parentElement.classList.remove('d-none');
-  document.getElementById('loginPage').classList.add('d-none');
-  document.getElementById('registerPage').classList.add('d-none');
-  
-  // 设置用户名
-  document.getElementById('username').textContent = currentUser.username;
-  
-  // 设置活动导航项
-  setActiveNavItem('dashboard');
-}
-
-// 设置活动导航项
-function setActiveNavItem(page) {
-  document.querySelectorAll('.nav-link').forEach(link => {
-    if (link.dataset.page === page) {
-      link.classList.add('active');
+    if (authMethod === 'password') {
+      serverData.password = document.getElementById('serverPassword').value;
     } else {
+      serverData.privateKey = document.getElementById('serverPrivateKey').value;
+    }
+
+    const testConnection = document.getElementById('testConnection').checked;
+
+    try {
+      // 显示加载状态
+      const saveBtn = document.getElementById('saveServerBtn');
+      const originalText = saveBtn.innerHTML;
+      saveBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>保存中...';
+      saveBtn.disabled = true;
+
+      // 如果需要测试连接
+      if (testConnection) {
+        await this.request('/api/servers/test-connection', {
+          method: 'POST',
+          body: serverData
+        });
+      }
+
+      // 保存服务器
+      const response = await this.request('/api/servers', {
+        method: 'POST',
+        body: serverData
+      });
+
+      if (response.success) {
+        this.showNotification('成功', '服务器添加成功', 'success');
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addServerModal'));
+        modal.hide();
+        
+        // 刷新服务器列表
+        await this.loadServersData();
+        if (this.currentPage === 'dashboard') {
+          await this.loadDashboardData();
+        }
+      }
+    } catch (error) {
+      console.error('保存服务器失败:', error);
+      this.showNotification('错误', error.message || '保存服务器失败', 'error');
+    } finally {
+      // 恢复按钮状态
+      const saveBtn = document.getElementById('saveServerBtn');
+      saveBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>保存服务器';
+      saveBtn.disabled = false;
+    }
+  }
+
+  // 重置添加服务器表单
+  resetAddServerForm() {
+    const form = document.getElementById('addServerForm');
+    form.reset();
+    
+    // 重置认证方式显示
+    document.getElementById('passwordAuth').classList.remove('d-none');
+    document.getElementById('keyAuth').classList.add('d-none');
+    document.getElementById('serverPassword').required = true;
+    document.getElementById('serverPrivateKey').required = false;
+    
+    // 重置端口默认值
+    document.getElementById('serverPort').value = 22;
+    
+    // 重置测试连接选项
+    document.getElementById('testConnection').checked = true;
+  }
+
+  // 页面导航
+  navigateTo(page) {
+    // 更新侧边栏活动状态
+    document.querySelectorAll('#sidebar .nav-link').forEach(link => {
       link.classList.remove('active');
-    }
-  });
-}
+    });
+    document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
 
-// 导航到指定页面
-function navigateTo(page) {
-  currentPage = page;
-  
-  // 更新页面标题
-  const pageTitles = {
-    dashboard: '仪表盘',
-    servers: '服务器管理',
-    ssh: 'SSH终端',
-    files: '文件管理',
-    logs: '审计日志',
-    settings: '设置',
-    profile: '个人资料'
-  };
-  
-  document.getElementById('pageTitle').textContent = pageTitles[page] || '页面';
-  
-  // 隐藏所有内容页
-  document.querySelectorAll('.content-page').forEach(pageEl => {
-    pageEl.classList.add('d-none');
-  });
-  
-  // 显示当前页面
-  const pageElement = document.getElementById(`${page}Page`);
-  if (pageElement) {
-    pageElement.classList.remove('d-none');
+    // 隐藏所有页面
+    document.querySelectorAll('.content-page').forEach(pageEl => {
+      pageEl.classList.add('d-none');
+    });
+
+    // 显示目标页面
+    const targetPage = document.getElementById(`${page}Page`);
+    if (targetPage) {
+      targetPage.classList.remove('d-none');
+      this.currentPage = page;
+      
+      // 更新页面标题和面包屑
+      this.updatePageHeader(page);
+      
+      // 加载页面特定数据
+      this.loadPageData(page);
+    }
   }
-  
-  // 设置活动导航项
-  setActiveNavItem(page);
-  
+
+  // 更新页面标题和面包屑
+  updatePageHeader(page) {
+    const titles = {
+      dashboard: '仪表盘',
+      servers: '服务器管理',
+      ssh: 'SSH终端',
+      files: '文件管理',
+      logs: '审计日志',
+      settings: '设置'
+    };
+    
+    const title = titles[page] || '未知页面';
+    document.getElementById('pageTitle').textContent = title;
+    document.getElementById('breadcrumbTitle').textContent = title;
+  }
+
   // 加载页面数据
-  loadPageData(page);
-  
-  // 清除可能的刷新间隔
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
+  loadPageData(page) {
+    switch (page) {
+      case 'dashboard':
+        this.loadDashboardData();
+        break;
+      case 'servers':
+        this.loadServersData();
+        break;
+      case 'logs':
+        this.loadLogsData();
+        break;
+      default:
+        break;
+    }
   }
-  
-  // 对于仪表盘，设置自动刷新
-  if (page === 'dashboard') {
-    refreshInterval = setInterval(() => {
-      loadDashboardData();
-    }, 30000); // 每30秒刷新一次
+
+  // 显示仪表盘
+  showDashboard() {
+    document.getElementById('sidebar').style.display = 'block';
+    document.querySelector('main').style.display = 'block';
+    this.navigateTo('dashboard');
   }
-}
 
-// 加载页面数据
-function loadPageData(page) {
-  switch (page) {
-    case 'dashboard':
-      loadDashboardData();
-      break;
-    case 'servers':
-      loadServersData();
-      break;
-    case 'ssh':
-      loadSshInterface();
-      break;
-    case 'files':
-      loadFilesInterface();
-      break;
-    case 'logs':
-      loadLogsData();
-      break;
-    case 'settings':
-      loadSettingsData();
-      break;
-    case 'profile':
-      loadProfileData();
-      break;
+  // 加载仪表盘数据
+  async loadDashboardData() {
+    try {
+      // 加载服务器列表
+      const serversResponse = await this.request('/api/servers');
+      this.serversList = serversResponse.data || [];
+      
+      // 更新统计数据
+      this.updateDashboardStats();
+      
+      // 更新服务器状态表格
+      this.updateServerStatusTable();
+      
+      // 初始化图表
+      if (typeof Chart !== 'undefined') {
+        this.initCharts();
+      }
+    } catch (error) {
+      console.error('加载仪表盘数据失败:', error);
+      this.showNotification('错误', '加载数据失败', 'error');
+    }
   }
-}
 
-// 刷新当前页面
-function refreshCurrentPage() {
-  loadPageData(currentPage);
-  showNotification('刷新成功', '页面数据已更新');
-}
-
-// 加载仪表盘数据
-async function loadDashboardData() {
-  try {
-    // 获取服务器列表
-    const serversResponse = await fetch('/api/servers', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+  // 更新仪表盘统计数据
+  updateDashboardStats() {
+    const stats = { total: 0, online: 0, warning: 0, error: 0 };
+    
+    this.serversList.forEach(server => {
+      stats.total++;
+      switch (server.status) {
+        case 'online': stats.online++; break;
+        case 'warning': stats.warning++; break;
+        case 'error': stats.error++; break;
       }
     });
-    
-    if (!serversResponse.ok) {
-      throw new Error('获取服务器列表失败');
+
+    document.getElementById('totalServers').textContent = stats.total;
+    document.getElementById('onlineServers').textContent = stats.online;
+    document.getElementById('warningServers').textContent = stats.warning;
+    document.getElementById('errorServers').textContent = stats.error;
+  }
+
+  // 更新服务器状态表格
+  async updateServerStatusTable() {
+    const tableBody = document.getElementById('serverStatusTable');
+    if (!tableBody) return;
+    tableBody.innerHTML = '';
+
+    if (this.serversList.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="9" class="text-center">没有服务器数据</td></tr>';
+      return;
     }
-    
-    const serversData = await serversResponse.json();
-    serversList = serversData.data;
-    
-    // 获取监控数据
-    const monitoringResponse = await fetch('/api/monitoring', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+
+    // 获取所有服务器的最新监控数据
+    let monitoringData = {};
+    try {
+      const monitoringResponse = await this.request('/api/monitoring');
+      if (monitoringResponse.success && monitoringResponse.data) {
+        monitoringResponse.data.forEach(data => {
+          monitoringData[data.server] = data;
+        });
       }
-    });
-    
-    if (!monitoringResponse.ok) {
-      throw new Error('获取监控数据失败');
+    } catch (error) {
+      console.error('获取监控数据失败:', error);
     }
-    
-    const monitoringResult = await monitoringResponse.json();
-    monitoringData = {};
-    
-    // 将监控数据转换为以服务器ID为键的对象
-    monitoringResult.data.forEach(item => {
-      monitoringData[item.server] = item;
-    });
-    
-    // 更新仪表盘统计数据
-    updateDashboardStats();
-    
-    // 更新服务器状态表格
-    updateServerStatusTable();
-    
-  } catch (error) {
-    console.error('加载仪表盘数据出错:', error);
-    showNotification('错误', '加载仪表盘数据失败', 'error');
-  }
-}
 
-// 更新仪表盘统计数据
-function updateDashboardStats() {
-  // 计算各种状态的服务器数量
-  const stats = {
-    total: serversList.length,
-    online: 0,
-    warning: 0,
-    error: 0
-  };
-  
-  serversList.forEach(server => {
-    switch (server.status) {
-      case 'online':
-        stats.online++;
-        break;
-      case 'warning':
-        stats.warning++;
-        break;
-      case 'error':
-        stats.error++;
-        break;
-    }
-  });
-  
-  // 更新DOM
-  document.getElementById('totalServers').textContent = stats.total;
-  document.getElementById('onlineServers').textContent = stats.online;
-  document.getElementById('warningServers').textContent = stats.warning;
-  document.getElementById('errorServers').textContent = stats.error;
-}
-
-// 更新服务器状态表格
-function updateServerStatusTable() {
-  const tableBody = document.getElementById('serverStatusTable');
-  tableBody.innerHTML = '';
-  
-  if (serversList.length === 0) {
-    const row = document.createElement('tr');
-    row.innerHTML = `<td colspan="8" class="text-center">没有服务器数据</td>`;
-    tableBody.appendChild(row);
-    return;
-  }
-  
-  serversList.forEach(server => {
-    const monitoring = monitoringData[server._id];
-    
-    const row = document.createElement('tr');
-    
-    // 状态类和图标
-    let statusClass = '';
-    let statusText = '';
-    
-    switch (server.status) {
-      case 'online':
-        statusClass = 'success';
-        statusText = '在线';
-        break;
-      case 'offline':
-        statusClass = 'secondary';
-        statusText = '离线';
-        break;
-      case 'warning':
-        statusClass = 'warning';
-        statusText = '警告';
-        break;
-      case 'error':
-        statusClass = 'danger';
-        statusText = '错误';
-        break;
-    }
-    
-    // 格式化最后检查时间
-    const lastCheck = server.lastCheck ? new Date(server.lastCheck).toLocaleString() : '从未';
-    
-    row.innerHTML = `
-      <td>${server.name}</td>
-      <td>${server.host}</td>
-      <td><span class="badge bg-${statusClass}">${statusText}</span></td>
-      <td>
-        ${monitoring ? `
-          <div class="progress">
-            <div class="progress-bar bg-${getCpuUsageClass(monitoring.cpu.usage)}" 
-                 style="width: ${monitoring.cpu.usage}%" 
-                 aria-valuenow="${monitoring.cpu.usage}" 
-                 aria-valuemin="0" 
-                 aria-valuemax="100">
-            </div>
-          </div>
-          <small>${monitoring.cpu.usage.toFixed(1)}%</small>
-        ` : '无数据'}
-      </td>
-      <td>
-        ${monitoring ? `
-          <div class="progress">
-            <div class="progress-bar bg-${getMemoryUsageClass(monitoring.memory.usagePercentage)}" 
-                 style="width: ${monitoring.memory.usagePercentage}%" 
-                 aria-valuenow="${monitoring.memory.usagePercentage}" 
-                 aria-valuemin="0" 
-                 aria-valuemax="100">
-            </div>
-          </div>
-          <small>${monitoring.memory.usagePercentage.toFixed(1)}%</small>
-        ` : '无数据'}
-      </td>
-      <td>
-        ${monitoring ? `
-          <div class="progress">
-            <div class="progress-bar bg-${getDiskUsageClass(monitoring.disk.usagePercentage)}" 
-                 style="width: ${monitoring.disk.usagePercentage}%" 
-                 aria-valuenow="${monitoring.disk.usagePercentage}" 
-                 aria-valuemin="0" 
-                 aria-valuemax="100">
-            </div>
-          </div>
-          <small>${monitoring.disk.usagePercentage.toFixed(1)}%</small>
-        ` : '无数据'}
-      </td>
-      <td>${lastCheck}</td>
-      <td>
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-primary" onclick="viewServerDetails('${server._id}')">
-            <i class="bi bi-eye"></i>
-          </button>
-          <button class="btn btn-outline-secondary" onclick="collectServerData('${server._id}')">
-            <i class="bi bi-arrow-repeat"></i>
-          </button>
-          <button class="btn btn-outline-danger" onclick="deleteServer('${server._id}')">
-            <i class="bi bi-trash"></i>
-          </button>
-        </div>
-      </td>
-    `;
-    
-    tableBody.appendChild(row);
-  });
-}
-
-// 获取CPU使用率的颜色类
-function getCpuUsageClass(usage) {
-  if (usage < 70) return 'success';
-  if (usage < 90) return 'warning';
-  return 'danger';
-}
-
-// 获取内存使用率的颜色类
-function getMemoryUsageClass(usage) {
-  if (usage < 80) return 'success';
-  if (usage < 95) return 'warning';
-  return 'danger';
-}
-
-// 获取磁盘使用率的颜色类
-function getDiskUsageClass(usage) {
-  if (usage < 85) return 'success';
-  if (usage < 95) return 'warning';
-  return 'danger';
-}
-
-// 登录
-async function login() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  
-  try {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ email, password })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      // 保存token
-      localStorage.setItem('token', data.token);
+    this.serversList.forEach(server => {
+      const monitoring = monitoringData[server._id];
+      let statusClass = 'secondary';
+      let statusText = '离线';
       
-      // 获取用户信息
-      await checkAuthStatus();
-      
-      showNotification('登录成功', '欢迎回来！');
-    } else {
-      showNotification('登录失败', data.error, 'error');
-    }
-  } catch (error) {
-    console.error('登录出错:', error);
-    showNotification('错误', '登录过程中发生错误', 'error');
-  }
-}
-
-// 注册
-async function register() {
-  const username = document.getElementById('registerUsername').value;
-  const email = document.getElementById('registerEmail').value;
-  const password = document.getElementById('registerPassword').value;
-  const confirmPassword = document.getElementById('registerConfirmPassword').value;
-  
-  // 验证密码
-  if (password !== confirmPassword) {
-    showNotification('错误', '两次输入的密码不一致', 'error');
-    return;
-  }
-  
-  try {
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ username, email, password })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      // 保存token
-      localStorage.setItem('token', data.token);
-      
-      // 获取用户信息
-      await checkAuthStatus();
-      
-      showNotification('注册成功', '账号已创建！');
-    } else {
-      showNotification('注册失败', data.error, 'error');
-    }
-  } catch (error) {
-    console.error('注册出错:', error);
-    showNotification('错误', '注册过程中发生错误', 'error');
-  }
-}
-
-// 退出登录
-async function logout() {
-  try {
-    await fetch('/api/auth/logout', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      switch (server.status) {
+        case 'online': statusClass = 'success'; statusText = '在线'; break;
+        case 'warning': statusClass = 'warning'; statusText = '警告'; break;
+        case 'error': statusClass = 'danger'; statusText = '错误'; break;
+        case 'offline': statusClass = 'secondary'; statusText = '离线'; break;
       }
+
+      const lastCheck = server.lastCheck 
+        ? new Date(server.lastCheck).toLocaleString() 
+        : '从未';
+
+      const row = document.createElement('tr');
+      row.dataset.serverId = server._id;
+      row.innerHTML = `
+        <td><input type="checkbox" class="form-check-input"></td>
+        <td>
+          <div class="d-flex align-items-center">
+            <div class="bg-${statusClass} rounded-circle p-2 me-2">
+              <i class="bi bi-hdd text-white small"></i>
+            </div>
+            <span>${server.name}</span>
+          </div>
+        </td>
+        <td>${server.host}</td>
+        <td><span class="badge bg-${statusClass} rounded-pill">${statusText}</span></td>
+        <td>
+          ${monitoring ? `
+            <div class="d-flex align-items-center">
+              <div class="progress flex-grow-1" style="height: 6px;">
+                <div class="progress-bar bg-${this.getCpuUsageClass(monitoring.cpu.usage)}" 
+                     style="width: ${monitoring.cpu.usage}%" 
+                     aria-valuenow="${monitoring.cpu.usage}">
+                </div>
+              </div>
+              <span class="ms-2">${monitoring.cpu.usage.toFixed(1)}%</span>
+            </div>
+          ` : '<span class="text-muted">无数据</span>'}
+        </td>
+        <td>
+          ${monitoring ? `
+            <div class="d-flex align-items-center">
+              <div class="progress flex-grow-1" style="height: 6px;">
+                <div class="progress-bar bg-${this.getMemoryUsageClass(monitoring.memory.usagePercentage)}" 
+                     style="width: ${monitoring.memory.usagePercentage}%">
+                </div>
+              </div>
+              <span class="ms-2">${monitoring.memory.usagePercentage.toFixed(1)}%</span>
+            </div>
+          ` : '<span class="text-muted">无数据</span>'}
+        </td>
+        <td>
+          ${monitoring ? `
+            <div class="d-flex align-items-center">
+              <div class="progress flex-grow-1" style="height: 6px;">
+                <div class="progress-bar bg-${this.getDiskUsageClass(monitoring.disk.usagePercentage)}" 
+                     style="width: ${monitoring.disk.usagePercentage}%">
+                </div>
+              </div>
+              <span class="ms-2">${monitoring.disk.usagePercentage.toFixed(1)}%</span>
+            </div>
+          ` : '<span class="text-muted">无数据</span>'}
+        </td>
+        <td>${lastCheck}</td>
+        <td>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+              操作
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="#" data-action="view"><i class="bi bi-eye me-2"></i>查看详情</a></li>
+              <li><a class="dropdown-item" href="#" data-action="collect"><i class="bi bi-arrow-repeat me-2"></i>更新数据</a></li>
+              <li><a class="dropdown-item" href="#" data-action="ssh"><i class="bi bi-terminal me-2"></i>SSH连接</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" data-action="delete"><i class="bi bi-trash me-2"></i>删除</a></li>
+            </ul>
+          </div>
+        </td>
+      `;
+      tableBody.appendChild(row);
     });
     
-    // 清除本地存储
+    // 初始化表格事件监听
+    this.initServerTableEvents();
+  }
+
+  // 工具函数：获取CPU使用率颜色类
+  getCpuUsageClass(usage) {
+    return usage < 70 ? 'success' : (usage < 90 ? 'warning' : 'danger');
+  }
+
+  // 工具函数：获取内存使用率颜色类
+  getMemoryUsageClass(usage) {
+    return usage < 70 ? 'success' : (usage < 90 ? 'warning' : 'danger');
+  }
+
+  // 工具函数：获取磁盘使用率颜色类
+  getDiskUsageClass(usage) {
+    return usage < 80 ? 'success' : (usage < 95 ? 'warning' : 'danger');
+  }
+
+  // 初始化图表
+  initCharts() {
+    // 图表初始化逻辑在 chart.js 中实现
+    if (window.chartUtils) {
+      const stats = { total: 0, online: 0, warning: 0, error: 0 };
+      this.serversList.forEach(server => {
+        stats.total++;
+        switch (server.status) {
+          case 'online': stats.online++; break;
+          case 'warning': stats.warning++; break;
+          case 'error': stats.error++; break;
+        }
+      });
+      
+      window.chartUtils.updateDashboardStats(stats.total, stats.online, stats.warning, stats.error);
+    }
+  }
+
+  // 加载服务器数据
+  async loadServersData() {
+    try {
+      const response = await this.request('/api/servers');
+      this.serversList = response.data || [];
+      this.updateServersTable();
+    } catch (error) {
+      console.error('加载服务器数据失败:', error);
+      this.showNotification('错误', '加载服务器数据失败', 'error');
+    }
+  }
+
+  // 更新服务器表格
+  updateServersTable() {
+    const tableBody = document.getElementById('serversList');
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = '';
+    
+    if (this.serversList.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="8" class="text-center">没有服务器数据</td></tr>';
+      return;
+    }
+    
+    this.serversList.forEach(server => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><input type="checkbox" class="form-check-input"></td>
+        <td>${server.name}</td>
+        <td>${server.host}</td>
+        <td>${server.port || 22}</td>
+        <td>${server.os || '未知'}</td>
+        <td><span class="badge bg-${server.status === 'online' ? 'success' : 'secondary'}">${server.status === 'online' ? '在线' : '离线'}</span></td>
+        <td>${new Date(server.createdAt).toLocaleDateString()}</td>
+        <td>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-primary" title="查看详情"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-outline-secondary" title="编辑"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-outline-danger" title="删除"><i class="bi bi-trash"></i></button>
+          </div>
+        </td>
+      `;
+      tableBody.appendChild(row);
+    });
+  }
+
+  // 加载日志数据
+  async loadLogsData() {
+    try {
+      const response = await this.request('/api/logs');
+      this.updateLogsTable(response.data || []);
+    } catch (error) {
+      console.error('加载日志数据失败:', error);
+      this.showNotification('错误', '加载日志数据失败', 'error');
+    }
+  }
+
+  // 更新日志表格
+  updateLogsTable(logs) {
+    const tableBody = document.getElementById('logsList');
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = '';
+    
+    if (logs.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="7" class="text-center">没有日志数据</td></tr>';
+      return;
+    }
+    
+    logs.forEach(log => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${new Date(log.timestamp).toLocaleString()}</td>
+        <td>${log.user || '系统'}</td>
+        <td>${log.action}</td>
+        <td>${log.ipAddress || '-'}</td>
+        <td>${log.server || '-'}</td>
+        <td><span class="badge bg-${log.status === 'success' ? 'success' : 'danger'}">${log.status === 'success' ? '成功' : '失败'}</span></td>
+        <td><button class="btn btn-sm btn-outline-primary">查看</button></td>
+      `;
+      tableBody.appendChild(row);
+    });
+  }
+
+  // 设置标签页切换
+  switchSettingsTab(tab) {
+    // 更新标签页活动状态
+    document.querySelectorAll('#settingsTabs a').forEach(link => {
+      link.classList.remove('active');
+    });
+    document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+
+    // 隐藏所有设置内容
+    document.querySelectorAll('.settings-tab').forEach(content => {
+      content.classList.add('d-none');
+    });
+
+    // 显示目标设置内容
+    const targetContent = document.getElementById(`${tab}Settings`);
+    if (targetContent) {
+      targetContent.classList.remove('d-none');
+    }
+  }
+
+  // 刷新当前页面
+  refreshCurrentPage() {
+    this.loadPageData(this.currentPage);
+    this.showNotification('成功', '数据已刷新', 'success');
+  }
+
+  // 设置自动刷新
+  setupAutoRefresh() {
+    setInterval(() => {
+      if (this.currentPage === 'dashboard') {
+        this.loadDashboardData();
+      }
+    }, 30000); // 30秒刷新一次
+  }
+
+  // 退出登录
+  logout() {
     localStorage.removeItem('token');
-    currentUser = null;
-    
-    // 显示登录页面
-    showAuthPages();
-    
-    showNotification('退出成功', '您已安全退出系统');
-  } catch (error) {
-    console.error('退出登录出错:', error);
-    
-    // 即使请求失败，也清除本地存储并显示登录页面
-    localStorage.removeItem('token');
-    currentUser = null;
-    showAuthPages();
+    this.redirectToAuth();
   }
-}
 
-// 显示通知
-function showNotification(title, message, type = 'info') {
-  const toast = document.getElementById('notificationToast');
-  const toastTitle = document.getElementById('toastTitle');
-  const toastMessage = document.getElementById('toastMessage');
-  
-  // 设置标题和消息
-  toastTitle.textContent = title;
-  toastMessage.textContent = message;
-  
-  // 设置类型样式
-  toast.className = 'toast';
-  switch (type) {
-    case 'error':
-      toast.classList.add('bg-danger', 'text-white');
-      break;
-    case 'warning':
-      toast.classList.add('bg-warning');
-      break;
-    case 'success':
-      toast.classList.add('bg-success', 'text-white');
-      break;
-    default:
-      toast.classList.add('bg-info', 'text-white');
-  }
-  
   // 显示通知
-  const bsToast = new bootstrap.Toast(toast);
-  bsToast.show();
-}
+  showNotification(title, message, type = 'info') {
+    const toast = document.getElementById('notificationToast');
+    const toastTitle = document.getElementById('toastTitle');
+    const toastMessage = document.getElementById('toastMessage');
 
-// 以下是页面特定的功能，可以根据需要实现
-function loadServersData() {
-  // 实现服务器管理页面的数据加载
-  console.log('加载服务器管理页面数据');
-}
+    if (!toast || !toastTitle || !toastMessage) return;
 
-function loadSshInterface() {
-  // 实现SSH终端界面
-  console.log('加载SSH终端界面');
-}
+    // 设置通知内容和样式
+    toastTitle.textContent = title;
+    toastMessage.textContent = message;
+    toast.className = 'toast'; // 重置样式
+    switch (type) {
+      case 'error': toast.classList.add('bg-danger', 'text-white'); break;
+      case 'warning': toast.classList.add('bg-warning'); break;
+      case 'success': toast.classList.add('bg-success', 'text-white'); break;
+      default: toast.classList.add('bg-info', 'text-white');
+    }
 
-function loadFilesInterface() {
-  // 实现文件管理界面
-  console.log('加载文件管理界面');
-}
+    // 显示通知
+    new bootstrap.Toast(toast).show();
+  }
 
-function loadLogsData() {
-  // 实现审计日志页面的数据加载
-  console.log('加载审计日志页面数据');
-}
-
-function loadSettingsData() {
-  // 实现设置页面的数据加载
-  console.log('加载设置页面数据');
-}
-
-function loadProfileData() {
-  // 实现个人资料页面的数据加载
-  console.log('加载个人资料页面数据');
-}
-
-// 查看服务器详情
-function viewServerDetails(serverId) {
-  console.log('查看服务器详情:', serverId);
-  // 实现查看服务器详情的功能
-}
-
-// 收集服务器数据
-async function collectServerData(serverId) {
-  try {
-    const response = await fetch(`/api/monitoring/collect-remote/${serverId}`, {
-      method: 'POST',
+  // 通用请求函数（封装重复逻辑）
+  async request(url, options = {}) {
+    const defaultOptions = {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Content-Type': 'application/json',
+        // 自动添加Token
+        ...(localStorage.getItem('token') && {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        })
+      }
+    };
+
+    const finalOptions = { ...defaultOptions, ...options };
+    if (finalOptions.body && typeof finalOptions.body === 'object') {
+      finalOptions.body = JSON.stringify(finalOptions.body);
+    }
+
+    try {
+      const response = await fetch(url, finalOptions);
+      const contentType = response.headers.get('content-type');
+      const responseData = contentType?.includes('application/json')
+        ? await response.json()
+        : { message: await response.text() };
+
+      if (!response.ok) {
+        throw new Error(responseData.message || responseData.error || `请求失败（${response.status}）`);
+      }
+      return responseData;
+    } catch (error) {
+      console.error('请求失败:', error);
+      throw error;
+    }
+  }
+
+  // 加载服务器列表
+  async loadServers() {
+    try {
+      const response = await this.request('/api/servers');
+      this.serversList = response.data || [];
+      return this.serversList;
+    } catch (error) {
+      console.error('加载服务器列表失败:', error);
+      this.showNotification('错误', '加载服务器列表失败', 'error');
+      return [];
+    }
+  }
+
+  // 初始化服务器表格事件监听
+  initServerTableEvents() {
+    const tableBody = document.getElementById('serverStatusTable');
+    if (!tableBody) return;
+
+    // 使用事件委托处理操作按钮点击
+    tableBody.addEventListener('click', async (e) => {
+      const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
+      if (!action) return;
+
+      const row = e.target.closest('tr');
+      const serverId = row?.dataset.serverId;
+      if (!serverId) return;
+
+      e.preventDefault();
+
+      switch (action) {
+        case 'view':
+          this.viewServerDetails(serverId);
+          break;
+        case 'collect':
+          await this.collectServerData(serverId);
+          break;
+        case 'ssh':
+          this.openSSHConnection(serverId);
+          break;
+        case 'delete':
+          await this.deleteServer(serverId);
+          break;
       }
     });
-    
-    if (response.ok) {
-      showNotification('成功', '服务器数据已更新');
-      loadDashboardData(); // 刷新数据
-    } else {
-      const data = await response.json();
-      showNotification('失败', data.error, 'error');
+
+    // 处理复选框全选
+    const selectAllCheckbox = document.querySelector('#serverStatusTable thead input[type="checkbox"]');
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('#serverStatusTable tbody input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+          checkbox.checked = e.target.checked;
+        });
+      });
     }
-  } catch (error) {
-    console.error('收集服务器数据出错:', error);
-    showNotification('错误', '收集服务器数据过程中发生错误', 'error');
+  }
+
+  // 页面特定功能（服务器管理相关）
+  viewServerDetails(serverId) {
+    console.log('查看服务器详情:', serverId);
+    // TODO: 实现服务器详情模态框
+  }
+
+  // 打开SSH连接
+  openSSHConnection(serverId) {
+    console.log('打开SSH连接:', serverId);
+    // TODO: 实现SSH连接功能
+  }
+
+  // 删除服务器
+  async deleteServer(serverId) {
+    if (!confirm('确定要删除这个服务器吗？此操作不可恢复。')) {
+      return;
+    }
+
+    try {
+      const response = await this.request(`/api/servers/${serverId}`, 'DELETE');
+      
+      if (response.success) {
+        this.showNotification('成功', '服务器删除成功', 'success');
+        await this.loadDashboardData(); // 重新加载数据
+      } else {
+        this.showNotification('错误', response.message || '删除失败', 'error');
+      }
+    } catch (error) {
+      console.error('删除服务器失败:', error);
+      this.showNotification('错误', '删除失败', 'error');
+    }
+  }
+
+  async collectServerData(serverId) {
+    try {
+      await this.request(`/api/monitoring/collect-remote/${serverId}`, 'POST');
+      this.showNotification('成功', '数据收集已启动', 'success');
+      setTimeout(() => this.loadDashboardData(), 2000);
+    } catch (error) {
+      this.showNotification('错误', error.message, 'error');
+    }
+  }
+
+  // 显示警告信息
+  showAlert(message, type = 'info') {
+    this.showNotification(type === 'success' ? '成功' : '提示', message, type);
   }
 }
 
-// 删除服务器
-async function deleteServer(serverId) {
-  if (!confirm('确定要删除此服务器吗？此操作不可撤销。')) {
-    return;
-  }
-  
-  try {
-    const response = await fetch(`/api/servers/${serverId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-    
-    if (response.ok) {
-      showNotification('成功', '服务器已删除');
-      loadDashboardData(); // 刷新数据
-    } else {
-      const data = await response.json();
-      showNotification('失败', data.error, 'error');
-    }
-  } catch (error) {
-    console.error('删除服务器出错:', error);
-    showNotification('错误', '删除服务器过程中发生错误', 'error');
-  }
-}
+// 初始化应用
+document.addEventListener('DOMContentLoaded', () => {
+  window.serverMonitor = new ServerMonitor();
+});

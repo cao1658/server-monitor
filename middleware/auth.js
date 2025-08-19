@@ -1,53 +1,45 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// 保护路由
+// 保护路由：验证用户是否登录
 exports.protect = async (req, res, next) => {
   let token;
 
-  // 从请求头或cookie中获取token
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    // 从请求头中获取
+  // 从请求头获取令牌（格式：Bearer <token>）
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.token) {
-    // 从cookie中获取
-    token = req.cookies.token;
   }
 
-  // 确保token存在
+  // 检查令牌是否存在
   if (!token) {
     return res.status(401).json({
       success: false,
-      error: '没有访问权限'
+      error: '未授权访问：请先登录'
     });
   }
 
   try {
-    // 验证token
+    // 验证令牌
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 获取用户
+    // 将用户信息添加到请求对象（不包含密码）
     req.user = await User.findById(decoded.id);
-
     next();
   } catch (err) {
     return res.status(401).json({
       success: false,
-      error: '没有访问权限'
+      error: '未授权访问：令牌无效或已过期'
     });
   }
 };
 
-// 授权角色
+// 角色授权：验证用户是否有指定角色
 exports.authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: `用户角色 ${req.user.role} 没有权限访问此资源`
+        error: `角色 ${req.user.role} 无权访问此资源`
       });
     }
     next();

@@ -1,17 +1,14 @@
 const express = require('express');
-const { 
-  register, 
-  login, 
-  logout, 
-  getMe 
-} = require('../controllers/auth');
-const { protect } = require('../middleware/auth');
-
+const { register, login, refreshToken } = require('../controllers/auth');
 const router = express.Router();
 
+// 注册
 router.post('/register', register);
+
+// 登录
 router.post('/login', login);
-router.get('/logout', protect, logout);
-router.get('/me', protect, getMe);
+
+// 刷新令牌
+router.post('/refresh-token', refreshToken);
 
 module.exports = router;

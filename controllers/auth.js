@@ -1,45 +1,33 @@
 const User = require('../models/User');
-const AuditLog = require('../models/AuditLog');
-const jwt = require('jsonwebtoken');
 
-// @desc    注册用户
-// @route   POST /api/auth/register
-// @access  Public
-exports.register = async (req, res, next) => {
+// 用户注册
+exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-
-    // 检查用户是否已存在
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      return res.status(400).json({
-        success: false,
-        error: '该邮箱已被注册'
-      });
-    }
+    const { name, email, password } = req.body;
 
     // 创建用户
     const user = await User.create({
-      username,
+      name,
       email,
-      password
+      password  // 会被 pre-save 钩子自动哈希
     });
 
+    // 生成令牌
     sendTokenResponse(user, 201, res);
   } catch (err) {
-    next(err);
+    res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
 };
 
-// @desc    用户登录
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res, next) => {
+// 用户登录
+exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 验证邮箱和密码
+    // 验证邮箱和密码是否提供
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -47,105 +35,85 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // 检查用户是否存在
+    // 查找用户并获取密码（因为模型中 select: false）
     const user = await User.findOne({ email }).select('+password');
-
     if (!user) {
       return res.status(401).json({
         success: false,
-        error: '无效的凭据'
+        error: '邮箱或密码不正确'
       });
     }
 
-    // 检查密码是否匹配
+    // 验证密码
     const isMatch = await user.matchPassword(password);
-
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        error: '无效的凭据'
+        error: '邮箱或密码不正确'
       });
     }
 
-    // 记录登录日志
-    await AuditLog.create({
-      user: user._id,
-      action: 'login',
-      details: {
-        method: 'password'
-      },
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
-    });
-
+    // 生成令牌
     sendTokenResponse(user, 200, res);
   } catch (err) {
-    next(err);
+    res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
 };
 
-// @desc    退出登录
-// @route   GET /api/auth/logout
-// @access  Private
-exports.logout = async (req, res, next) => {
+// 刷新访问令牌
+exports.refreshToken = async (req, res) => {
   try {
-    // 记录登出日志
-    await AuditLog.create({
-      user: req.user.id,
-      action: 'logout',
-      details: {},
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
-    });
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        error: '请提供刷新令牌'
+      });
+    }
 
+    // 验证刷新令牌
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+    
+    // 查找用户
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: '刷新令牌无效'
+      });
+    }
+
+    // 生成新的访问令牌
+    const accessToken = user.getSignedJwtToken();
     res.status(200).json({
       success: true,
-      data: {}
+      accessToken
     });
   } catch (err) {
-    next(err);
+    res.status(401).json({
+      success: false,
+      error: '刷新令牌无效或已过期'
+    });
   }
 };
 
-// @desc    获取当前登录用户
-// @route   GET /api/auth/me
-// @access  Private
-exports.getMe = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user.id);
-
-    res.status(200).json({
-      success: true,
-      data: user
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// 生成JWT令牌并发送响应
+// 辅助函数：生成令牌并返回响应
 const sendTokenResponse = (user, statusCode, res) => {
-  // 创建令牌
-  const token = user.getSignedJwtToken();
+  const accessToken = user.getSignedJwtToken();
+  const refreshToken = user.getRefreshToken();
 
-  const options = {
-    expires: new Date(
-      Date.now() + process.env.JWT_EXPIRE.match(/(\d+)([dhms])/)[1] * 
-      {d: 86400000, h: 3600000, m: 60000, s: 1000}[process.env.JWT_EXPIRE.match(/(\d+)([dhms])/)[2]]
-    ),
-    httpOnly: true
-  };
-
-  // 在生产环境中使用安全cookie
-  if (process.env.NODE_ENV === 'production') {
-    options.secure = true;
-  }
-
-  res
-    .status(statusCode)
-    .cookie('token', token, options)
-    .json({
-      success: true,
-      token
-    });
+  res.status(statusCode).json({
+    success: true,
+    accessToken,
+    refreshToken,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    }
+  });
 };
