@@ -1,20 +1,20 @@
 {
-  "path": "c:\\Users\\49628\\Documents\\server-miontor",
-  "desc": "这是一个基于Node.js的服务器监控系统，提供实时服务器性能监控、SSH命令执行和文件传输功能，具有用户认证、安全审计日志和响应式Web界面。",
-  "id": "b723e999a1fd4984a2de74a2d9208e59",
+  "path": "c:\\Users\\49628\\Documents\\server-monitor",
+  "desc": "这是一个现代化的服务器监控系统演示版，具有美观的前端界面和模拟的后端API。主要功能包括：服务器管理、实时监控数据展示、SSH终端、文件管理、审计日志等。前端采用Bootstrap 5和Chart.js实现现代化UI设计，后端使用Express.js提供RESTful API服务，包含完整的模拟数据用于演示。",
+  "id": "23c717b9a1b546bc8dedbf54a408b725",
   "data": {
-    "spaceKey": "b723e999a1fd4984a2de74a2d9208e59",
+    "spaceKey": "23c717b9a1b546bc8dedbf54a408b725",
     "connections": {
-      "webIDE": "https://b723e999a1fd4984a2de74a2d9208e59.ap-singapore.cloudstudio.club",
-      "preview": "",
-      "api": "https://b723e999a1fd4984a2de74a2d9208e59--api.ap-singapore.cloudstudio.club",
-      "pty": "https://b723e999a1fd4984a2de74a2d9208e59--pty.ap-singapore.cloudstudio.club"
+      "webIDE": "https://23c717b9a1b546bc8dedbf54a408b725.ap-singapore.cloudstudio.club",
+      "preview": "https://23c717b9a1b546bc8dedbf54a408b725--{port}.ap-singapore.cloudstudio.club",
+      "api": "https://23c717b9a1b546bc8dedbf54a408b725--api.ap-singapore.cloudstudio.club",
+      "pty": "https://23c717b9a1b546bc8dedbf54a408b725--pty.ap-singapore.cloudstudio.club"
     }
   },
   "config": {
-    "api": "https://b723e999a1fd4984a2de74a2d9208e59--api.ap-singapore.cloudstudio.club",
-    "pty": "https://b723e999a1fd4984a2de74a2d9208e59--pty.ap-singapore.cloudstudio.club",
+    "api": "https://23c717b9a1b546bc8dedbf54a408b725--api.ap-singapore.cloudstudio.club",
+    "pty": "https://23c717b9a1b546bc8dedbf54a408b725--pty.ap-singapore.cloudstudio.club",
     "region": "ap-shanghai",
-    "spaceKey": "b723e999a1fd4984a2de74a2d9208e59"
+    "spaceKey": "23c717b9a1b546bc8dedbf54a408b725"
   }
 }

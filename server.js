@@ -19,6 +19,10 @@ app.set('trust proxy', 1);
 // 安全中间件
 app.use(helmet()); // 设置安全相关的HTTP头
 app.use(xss()); // 防止XSS攻击
+app.use(express.json()); //解析JSON请求体
+
+// 导入服务器路由（关键：确保路由正确导入）
+const serverRoutes = require('./routes/servers');
 
 // CORS配置
 app.use(cors({
@@ -64,6 +68,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 挂载路由
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+// 挂载路由到/api/servers路径（与前端请求路径匹配）
+app.use('/api/servers', serverRoutes);
+
 
 // 前端路由处理（如果需要支持SPA应用）
 app.get('*', (req, res) => {
@@ -106,19 +113,19 @@ db.on('error', (err) => console.error('MongoDB 连接错误:', err));
 db.on('disconnected', () => console.warn('MongoDB 连接已断开，尝试重连...'));
 
 // 启动服务器
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`服务器在${process.env.NODE_ENV || 'development'}模式下运行，端口: ${PORT}`);
 });
 
 // 处理未捕获的异常
 process.on('unhandledRejection', (err) => {
-  console.log('未处理的Promise拒绝:', err.message);
+  console.log('未处理的Promise拒绝:', err.message, err.stack); // 补充打印堆栈信息
   server.close(() => process.exit(1));
 });
 
 process.on('uncaughtException', (err) => {
-  console.log('未捕获的异常:', err.message);
+  console.log('未捕获的异常:', err.message, err.stack); // 补充打印堆栈信息
   server.close(() => process.exit(1));
 });
 

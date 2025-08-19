@@ -12,6 +12,27 @@
             "webRoot": "${workspaceFolder}"
         },
 
+        
+        {
+            "name": "Electron Main",
+            "program": "${workspaceFolder}/main.js",
+            "request": "launch",
+            "runtimeExecutable": "electron",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node"
+        },
+        
+
+        {
+            "name": "Launch Chrome",
+            "request": "launch",
+            "type": "chrome",
+            "url": "http://localhost:8080",
+            "webRoot": "${workspaceFolder}"
+        },
+
         {
             "name": "Launch Edge",
             "request": "launch",
@@ -30,7 +51,7 @@
             "type": "msedge",
             "request": "launch",
             "name": "Open index.html",
-            "file": "c:\\Users\\49628\\Documents\\server-monitor\\public\\auth.html"
+            "file": "c:\\Users\\49628\\Documents\\server-monitor\\public\\index.html"
         }
     ]
 }
