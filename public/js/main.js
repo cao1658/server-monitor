@@ -84,36 +84,6 @@ class ServerMonitor {
 
     // 添加服务器模态框事件
     this.initAddServerModal();
-    
-    // 初始化图表时间范围选择器
-    this.initChartTimeRangeSelector();
-  }
-
-  // 初始化图表时间范围选择器
-  initChartTimeRangeSelector() {
-    // 监听时间范围下拉菜单点击
-    document.addEventListener('click', (e) => {
-      if (e.target.closest('.dropdown-menu') && e.target.textContent.includes('小时') || e.target.textContent.includes('天')) {
-        e.preventDefault();
-        const timeRange = e.target.textContent;
-        
-        // 更新按钮文本
-        const dropdownButton = e.target.closest('.dropdown').querySelector('.dropdown-toggle');
-        if (dropdownButton) {
-          dropdownButton.innerHTML = `<i class="bi bi-clock me-1"></i>${timeRange}`;
-        }
-        
-        // 更新图表
-        let period = '24h';
-        if (timeRange.includes('6小时')) period = '6h';
-        else if (timeRange.includes('12小时')) period = '12h';
-        else if (timeRange.includes('7天')) period = '7d';
-        
-        if (window.chartUtils && window.chartUtils.updateResourceChart) {
-          window.chartUtils.updateResourceChart(period);
-        }
-      }
-    });
   }
 
   // 初始化添加服务器模态框

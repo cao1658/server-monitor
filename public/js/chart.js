@@ -1,4 +1,3 @@
-Failed to resolve the requested file.
 // 图表初始化和配置
 document.addEventListener('DOMContentLoaded', function() {
     // 检查是否在仪表盘页面
