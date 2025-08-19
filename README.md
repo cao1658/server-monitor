@@ -24,7 +24,11 @@
 
 1. 克隆仓库
 ```bash
+<<<<<<< HEAD
 git clone https://github.com/yourusernamecao1658/server-monitor.git
+=======
+git clone https://github.com/cao1568/server-monitor.git
+>>>>>>> 903aa953b30b7cf2c61991e45afa38ea00efd4b7
 cd server-monitor
 ```
 
