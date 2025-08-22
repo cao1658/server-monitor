@@ -33,6 +33,18 @@ class AuthManager {
             e.preventDefault();
             this.handleRegister();
         });
+        
+        // 忘记密码链接
+        document.querySelector('.forgot-password')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showForgotPasswordModal();
+        });
+        
+        // 忘记密码表单提交
+        document.getElementById('forgotPasswordForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleForgotPassword();
+        });
     }
 
     // 显示注册表单
@@ -227,13 +239,13 @@ class AuthManager {
                 this.showToast('登录成功！', 'success');
                 
                 // 保存token (后端返回的是 accessToken 和 refreshToken)
-                localStorage.setItem('token', data.accessToken);
+                localStorage.setItem('authToken', data.accessToken);
                 localStorage.setItem('refreshToken', data.refreshToken);
                 localStorage.setItem('user', JSON.stringify(data.user));
 
                 // 跳转到主页面
                 setTimeout(() => {
-                    window.location.href = '/index.html';
+                    window.location.href = '/';
                 }, 1000);
             } else {
                 this.showToast(data.error || '登录失败', 'error');
@@ -318,6 +330,72 @@ class AuthManager {
         }
     }
 
+    // 显示忘记密码模态框
+    showForgotPasswordModal() {
+        // 重置表单
+        document.getElementById('forgotPasswordForm')?.reset();
+        document.getElementById('resetSuccess')?.classList.add('d-none');
+        
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('forgotPasswordModal'));
+        modal.show();
+    }
+    
+    // 处理忘记密码请求
+    async handleForgotPassword() {
+        const email = document.getElementById('resetEmail').value.trim();
+        
+        // 验证邮箱
+        if (!this.validateEmail(email, document.getElementById('resetEmail'))) {
+            this.showToast('请输入有效的邮箱地址', 'error');
+            return;
+        }
+        
+        this.showLoading(true);
+        
+        try {
+            // 发送重置密码请求
+            const response = await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                // 显示成功信息
+                document.getElementById('resetSuccess').classList.remove('d-none');
+                document.getElementById('forgotPasswordForm').classList.add('d-none');
+                
+                // 3秒后关闭模态框
+                setTimeout(() => {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('forgotPasswordModal'));
+                    if (modal) {
+                        modal.hide();
+                        
+                        // 重置表单状态
+                        setTimeout(() => {
+                            document.getElementById('forgotPasswordForm').classList.remove('d-none');
+                            document.getElementById('resetSuccess').classList.add('d-none');
+                        }, 500);
+                    }
+                }, 3000);
+                
+                this.showToast('重置链接已发送到您的邮箱', 'success');
+            } else {
+                this.showToast(data.error || '发送重置链接失败', 'error');
+            }
+        } catch (error) {
+            console.error('忘记密码错误:', error);
+            this.showToast('网络错误，请稍后重试', 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
     // 显示Toast通知
     showToast(message, type = 'info') {
         const toast = document.getElementById('authToast');
@@ -375,23 +453,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 检查是否已登录
 function checkAuthStatus() {
-    const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    if (token) {
-        // 验证token有效性
-        fetch('/api/auth/verify', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                // 已登录，跳转到主页面
-                window.location.href = '/';
-            }
-        })
-        .catch(error => {
-            console.error('Token验证失败:', error);
-        });
+    const token = localStorage.getItem('authToken');
+    
+    // 如果在登录页面已有有效token，则跳转到主页
+    if (token && window.location.pathname.includes('auth.html')) {
+        // 简单检查token是否存在，不进行后端验证
+        // 因为后端没有提供verify接口，实际验证会在访问受保护资源时进行
+        window.location.href = '/';
     }
 }
 

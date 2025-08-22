@@ -1,0 +1,35 @@
+/* Bootstrap Icons 简化版 */
+@font-face {
+  font-family: "bootstrap-icons";
+  src: url("./fonts/bootstrap-icons.woff2") format("woff2"),
+       url("./fonts/bootstrap-icons.woff") format("woff");
+}
+
+.bi::before {
+  display: inline-block;
+  font-family: bootstrap-icons !important;
+  font-style: normal;
+  font-weight: normal !important;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  vertical-align: -0.125em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.bi-person::before { content: "\f4ce"; }
+.bi-lock::before { content: "\f47b"; }
+.bi-eye::before { content: "\f341"; }
+.bi-eye-slash::before { content: "\f340"; }
+.bi-shield-lock::before { content: "\f5d6"; }
+.bi-box-arrow-in-right::before { content: "\f11c"; }
+.bi-person-plus::before { content: "\f4d1"; }
+.bi-hdd-network::before { content: "\f3a2"; }
+.bi-info-circle::before { content: "\f430"; }
+.bi-check-circle-fill::before { content: "\f26a"; }
+.bi-exclamation-circle-fill::before { content: "\f332"; }
+.bi-exclamation-triangle-fill::before { content: "\f33a"; }
+.bi-envelope::before { content: "\f32f"; }
+.bi-envelope-paper::before { content: "\f331"; }
+.bi-check-circle::before { content: "\f26b"; }

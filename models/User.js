@@ -26,7 +26,9 @@ const UserSchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'admin'],  // 支持的角色
     default: 'user'
-  }
+  },
+  resetPasswordToken: String,
+  resetPasswordExpire: Date
 }, { timestamps: true });
 
 // 保存前自动哈希密码

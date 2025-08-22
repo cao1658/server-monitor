@@ -25,22 +25,15 @@ class ServerMonitor {
 
   // 检查用户认证状态
   checkAuth() {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('authToken');
     if (!token) {
       this.redirectToAuth();
       return false;
     }
     
-    // 验证token有效性
-    this.request('/api/auth/verify')
-      .then(() => {
-        this.showDashboard();
-      })
-      .catch(() => {
-        localStorage.removeItem('token');
-        this.redirectToAuth();
-      });
-    
+    // 直接显示仪表盘，因为后端没有提供verify接口
+    // 实际验证会在访问受保护资源时进行
+    this.showDashboard();
     return true;
   }
 
@@ -588,7 +581,9 @@ class ServerMonitor {
 
   // 退出登录
   logout() {
-    localStorage.removeItem('token');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     this.redirectToAuth();
   }
 
@@ -622,8 +617,8 @@ class ServerMonitor {
       headers: {
         'Content-Type': 'application/json',
         // 自动添加Token
-        ...(localStorage.getItem('token') && {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        ...(localStorage.getItem('authToken') && {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         })
       }
     };
