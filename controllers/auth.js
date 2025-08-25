@@ -156,6 +156,23 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
+// 注销
+exports.logout = async (req, res) => {
+  try {
+    // 注销功能主要在前端实现，清除本地存储的令牌
+    // 后端只需返回成功状态
+    res.status(200).json({
+      success: true,
+      message: '注销成功'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: '注销失败'
+    });
+  }
+};
+
 // 重置密码
 exports.resetPassword = async (req, res) => {
   try {

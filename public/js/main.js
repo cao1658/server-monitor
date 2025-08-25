@@ -239,6 +239,7 @@ class ServerMonitor {
       ssh: 'SSH终端',
       files: '文件管理',
       logs: '审计日志',
+      users: '用户管理',
       settings: '设置'
     };
     
@@ -258,6 +259,12 @@ class ServerMonitor {
         break;
       case 'logs':
         this.loadLogsData();
+        break;
+      case 'users':
+        // 使用用户管理器加载用户数据
+        if (window.userManager) {
+          window.userManager.loadUsers();
+        }
         break;
       default:
         break;
@@ -580,11 +587,31 @@ class ServerMonitor {
   }
 
   // 退出登录
-  logout() {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    this.redirectToAuth();
+  async logout() {
+    try {
+      // 调用后端注销接口
+      await this.request('/api/auth/logout', {
+        method: 'POST'
+      });
+      
+      // 清除本地存储的令牌和用户信息
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      
+      // 显示成功消息并重定向到登录页面
+      this.showNotification('成功', '您已成功注销', 'success');
+      setTimeout(() => {
+        this.redirectToAuth();
+      }, 1000);
+    } catch (error) {
+      console.error('注销失败:', error);
+      // 即使后端请求失败，也清除本地存储并重定向
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      this.redirectToAuth();
+    }
   }
 
   // 显示通知

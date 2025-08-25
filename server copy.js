@@ -97,9 +97,8 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log('MongoDB 连接成功'))
 .catch(err => {
   console.error('MongoDB 连接失败:', err.message);
-  process.exit(1); // 连接失败时退出进程
-  
-  
+  console.warn('继续启动服务器，但数据库功能将不可用');
+  // 不退出进程，继续启动服务器
 });
 
 // 监听数据库连接事件
